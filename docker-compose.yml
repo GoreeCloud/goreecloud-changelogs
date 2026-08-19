@@ -2,11 +2,14 @@ services:
   changelogs:
     build: .
     restart: unless-stopped
+    init: true
     read_only: true
     tmpfs:
-      - /tmp:noexec,nosuid,size=64m
+      - /tmp:noexec,nosuid,nodev,size=64m,mode=1777
     environment:
+      CHANGELOGS_READ_TOKEN: ${CHANGELOGS_READ_TOKEN:-}
       CHANGELOGS_WRITE_TOKEN: ${CHANGELOGS_WRITE_TOKEN:-}
+      CHANGELOGS_ALLOW_UNAUTHENTICATED_READS: ${CHANGELOGS_ALLOW_UNAUTHENTICATED_READS:-0}
     volumes:
       - ./data:/app/data
     networks:
@@ -15,11 +18,19 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    pids_limit: 256
+    stop_grace_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
 networks:
   proxy:
     external: true
