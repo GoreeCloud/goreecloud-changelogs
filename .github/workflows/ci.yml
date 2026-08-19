@@ -19,4 +19,9 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: pytest -q
       - run: python scripts/verify_ledger.py
+      - name: Prove disposable ledger backup and restore
+        run: |
+          mkdir -p .ci-recovery
+          python scripts/backup_ledger.py .ci-recovery/changelogs-backup.sqlite3 --manifest .ci-recovery/backup.json
+          python scripts/validate_restore.py .ci-recovery/changelogs-backup.sqlite3 --restore-root .ci-recovery/restore --report .ci-recovery/restore.json
       - run: python -m compileall -q app scripts
