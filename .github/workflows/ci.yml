@@ -18,4 +18,5 @@ jobs:
           python-version: '3.13'
       - run: pip install -e '.[dev]'
       - run: pytest -q
+      - run: python scripts/verify_ledger.py
       - run: python -m compileall -q app scripts
