@@ -6,10 +6,14 @@ All notable source releases of GoreeCloud Changelogs will be documented here. Th
 
 - Added FastAPI web and JSON API service.
 - Added SQLite append-only historical ledger schema with FTS5 search.
+- Added database-enforced immutability for historical entries so UPDATE and DELETE operations fail closed.
+- Added source-identity and timeline indexes plus supersedes-reference integrity constraints.
+- Added an automated ledger verifier covering SQLite integrity, foreign keys, FTS synchronization, supersedes references, duplicate source identities, and required titles.
+- Added DOCX-to-ledger migration reconciliation reporting with per-project source-versus-ledger counts and missing/unexpected identity detection.
 - Added Glaze UI timeline, project filter, search, and entry-detail surfaces.
-- Added fail-closed bearer-authenticated write API boundary.
+- Added fail-closed scoped read/write API authentication and controlled JSON export for integrations.
 - Added historical Microsoft Word change-log importer.
 - Added hardened Docker and Docker Compose foundation.
-- Added source validation through GitHub Actions.
+- Added source and ledger validation through GitHub Actions.
 - Added native Android Jetpack Compose project foundation.
 - Added migration, architecture, API, security, and production-readiness documentation.
