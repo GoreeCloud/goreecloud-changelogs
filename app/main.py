@@ -6,7 +6,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="GoreeCloud Changelogs",
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/api/docs",
     redoc_url=None,
     lifespan=lifespan,
@@ -34,7 +34,40 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 
 
-def list_entries(q: str = "", project: str = "", limit: int = 100):
+def _bearer_token(authorization: str | None) -> str:
+    if not authorization:
+        return ""
+    scheme, _, value = authorization.partition(" ")
+    if scheme.lower() != "bearer":
+        return ""
+    return value.strip()
+
+
+def require_read_access(authorization: str | None = Header(default=None)) -> None:
+    if os.getenv("CHANGELOGS_ALLOW_UNAUTHENTICATED_READS", "").lower() in {"1", "true", "yes"}:
+        return
+    expected = os.getenv("CHANGELOGS_READ_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "read API disabled")
+    if not secrets.compare_digest(_bearer_token(authorization), expected):
+        raise HTTPException(401, "unauthorized", headers={"WWW-Authenticate": "Bearer"})
+
+
+def require_write_access(authorization: str | None = Header(default=None)) -> None:
+    expected = os.getenv("CHANGELOGS_WRITE_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "write API disabled")
+    if not secrets.compare_digest(_bearer_token(authorization), expected):
+        raise HTTPException(401, "unauthorized", headers={"WWW-Authenticate": "Bearer"})
+
+
+def list_entries(
+    q: str = "",
+    project: str = "",
+    limit: int = 100,
+    occurred_from: str = "",
+    occurred_to: str = "",
+):
     with connect() as cx:
         params: list[object] = []
         where: list[str] = []
@@ -46,6 +79,12 @@ def list_entries(q: str = "", project: str = "", limit: int = 100):
         if project:
             where.append("p.slug=?")
             params.append(project)
+        if occurred_from:
+            where.append("e.occurred_at>=?")
+            params.append(occurred_from)
+        if occurred_to:
+            where.append("e.occurred_at<=?")
+            params.append(occurred_to)
         sql = f"SELECT e.*,p.slug project_slug,p.name project_name FROM entries e {join}"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -115,18 +154,31 @@ def healthz():
     return {"status": "ok"}
 
 
-@app.get("/api/v1/projects")
+@app.get("/api/v1/projects", dependencies=[Depends(require_read_access)])
 def api_projects():
     with connect() as cx:
-        return [dict(row) for row in cx.execute("SELECT * FROM projects ORDER BY name")]
+        return [
+            dict(row)
+            for row in cx.execute(
+                "SELECT p.*,count(e.id) entry_count,max(e.occurred_at) latest_entry_at "
+                "FROM projects p LEFT JOIN entries e ON e.project_id=p.id "
+                "GROUP BY p.id ORDER BY p.name"
+            )
+        ]
 
 
-@app.get("/api/v1/entries")
-def api_entries(q: str = "", project: str = "", limit: int = Query(100, ge=1, le=500)):
-    return list_entries(q, project, limit)
+@app.get("/api/v1/entries", dependencies=[Depends(require_read_access)])
+def api_entries(
+    q: str = "",
+    project: str = "",
+    occurred_from: str = Query("", alias="from"),
+    occurred_to: str = Query("", alias="to"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    return list_entries(q, project, limit, occurred_from, occurred_to)
 
 
-@app.get("/api/v1/entries/{entry_id}")
+@app.get("/api/v1/entries/{entry_id}", dependencies=[Depends(require_read_access)])
 def api_entry(entry_id: int):
     with connect() as cx:
         row = cx.execute(
@@ -137,6 +189,25 @@ def api_entry(entry_id: int):
     if not row:
         raise HTTPException(404)
     return dict(row)
+
+
+@app.get("/api/v1/export", dependencies=[Depends(require_read_access)])
+def api_export(
+    project: str = "",
+    occurred_from: str = Query("", alias="from"),
+    occurred_to: str = Query("", alias="to"),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    entries = list_entries("", project, limit, occurred_from, occurred_to)
+    with connect() as cx:
+        total = cx.execute("SELECT count(*) c FROM entries").fetchone()["c"]
+    return {
+        "schema_version": 1,
+        "exported_entries": len(entries),
+        "ledger_total_entries": total,
+        "filters": {"project": project, "from": occurred_from, "to": occurred_to},
+        "entries": entries,
+    }
 
 
 class EntryCreate(BaseModel):
@@ -162,20 +233,17 @@ class EntryCreate(BaseModel):
     supersedes_id: int | None = None
 
 
-@app.post("/api/v1/entries", status_code=201)
-def create_entry(data: EntryCreate, authorization: str | None = Header(default=None)):
-    expected = os.getenv("CHANGELOGS_WRITE_TOKEN", "")
-    if not expected:
-        raise HTTPException(503, "write API disabled")
-    supplied = (authorization or "").removeprefix("Bearer ")
-    if not secrets.compare_digest(supplied, expected):
-        raise HTTPException(401, "unauthorized", headers={"WWW-Authenticate": "Bearer"})
-
+@app.post("/api/v1/entries", status_code=201, dependencies=[Depends(require_write_access)])
+def create_entry(data: EntryCreate):
     slug = re.sub(r"[^a-z0-9-]+", "-", data.project_slug.lower()).strip("-")
     if not slug:
         raise HTTPException(422, "invalid project slug")
 
     with connect() as cx:
+        if data.supersedes_id is not None:
+            superseded = cx.execute("SELECT id FROM entries WHERE id=?", (data.supersedes_id,)).fetchone()
+            if not superseded:
+                raise HTTPException(422, "supersedes_id does not reference an existing entry")
         cx.execute(
             "INSERT INTO projects(slug,name) VALUES(?,?) "
             "ON CONFLICT(slug) DO UPDATE SET name=excluded.name",
