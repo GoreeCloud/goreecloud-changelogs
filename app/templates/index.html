@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero glaze">
+  <div>
+    <p class="eyebrow">Historical change ledger</p>
+    <h1>Everything that changed.<br><span>One permanent history.</span></h1>
+    <p>Search {{ count }} imported and native GoreeCloud changes across applications, infrastructure, security, design, and operations.</p>
+  </div>
+  <div class="hero-stat"><b>{{ count }}</b><span>historical entries</span></div>
+</section>
+<form class="search glaze" method="get">
+  <input name="q" value="{{ q }}" placeholder="Search titles, changes, validation, releases…" aria-label="Search changelogs">
+  <select name="project" aria-label="Project">
+    <option value="">All projects</option>
+    {% for p in projects %}<option value="{{p.slug}}" {% if project==p.slug %}selected{% endif %}>{{p.name}} · {{p.entry_count}}</option>{% endfor %}
+  </select>
+  <button>Search</button>
+</form>
+<div class="layout">
+  <aside class="rail glaze">
+    <h2>Projects</h2>
+    <a class="nav {% if not project %}active{% endif %}" href="/?q={{q}}">All history</a>
+    {% for p in projects %}<a class="nav {% if project==p.slug %}active{% endif %}" href="/?project={{p.slug}}"><span>{{p.name}}</span><b>{{p.entry_count}}</b></a>{% endfor %}
+  </aside>
+  <section class="timeline">
+    <div class="section-head"><div><p class="eyebrow">Timeline</p><h2>{% if project %}Filtered history{% else %}Recent changes{% endif %}</h2></div><span>{{entries|length}} shown</span></div>
+    {% if entries %}
+      {% for e in entries %}
+      <article class="entry raised">
+        <div class="dot"></div>
+        <div class="entry-body">
+          <div class="meta"><span class="chip">{{e.project_name}}</span>{% if e.category %}<span>{{e.category[:80]}}</span>{% endif %}</div>
+          <a href="/entry/{{e.id}}"><h3>{{e.title}}</h3></a>
+          <time>{{e.occurred_at}}</time>
+          {% if e.purpose %}<p>{{e.purpose[:330]}}{% if e.purpose|length>330 %}…{% endif %}</p>{% elif e.summary %}<p>{{e.summary[:330]}}{% if e.summary|length>330 %}…{% endif %}</p>{% endif %}
+          <div class="entry-actions"><a href="/entry/{{e.id}}">Open record →</a>{% if e.validation %}<span class="ok">✓ validation recorded</span>{% endif %}</div>
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}<div class="empty glaze"><h3>No matching changes</h3><p>Try a broader search or another project.</p></div>{% endif %}
+  </section>
+</div>
+{% endblock %}
