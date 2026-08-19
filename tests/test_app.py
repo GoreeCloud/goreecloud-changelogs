@@ -1,6 +1,12 @@
+import sqlite3
+import uuid
+
+import pytest
 from fastapi.testclient import TestClient
 
+from app.db import connect, init_db
 from app.main import app
+from scripts.verify_ledger import verify
 
 
 def test_health():
@@ -65,3 +71,28 @@ def test_write_api_fails_closed_without_token(monkeypatch):
             },
         )
         assert response.status_code == 503
+
+
+def test_historical_entry_cannot_be_updated_or_deleted():
+    init_db()
+    slug = f"integrity-{uuid.uuid4().hex}"
+    with connect() as cx:
+        cx.execute("INSERT INTO projects(slug,name) VALUES(?,?)", (slug, "Integrity Test"))
+        project_id = cx.execute("SELECT id FROM projects WHERE slug=?", (slug,)).fetchone()["id"]
+        entry_id = cx.execute(
+            "INSERT INTO entries(project_id,occurred_at,title,source_ref) VALUES(?,?,?,?)",
+            (project_id, "2026-08-19T00:00:00-05:00", "Immutable test entry", "pytest"),
+        ).lastrowid
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with connect() as cx:
+            cx.execute("UPDATE entries SET title='Changed' WHERE id=?", (entry_id,))
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with connect() as cx:
+            cx.execute("DELETE FROM entries WHERE id=?", (entry_id,))
+
+
+def test_ledger_integrity_verifier_passes():
+    report = verify()
+    assert report["ok"] is True, report["failures"]
