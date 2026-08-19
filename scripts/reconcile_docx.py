@@ -11,15 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.db import connect, init_db
-from scripts.import_docx import clean_project, parse, slugify
-
-
-def source_documents(folder: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in folder.iterdir()
-        if path.is_file() and "Change Log" in path.name and not path.name.startswith("~$")
-    )
+from scripts.import_docx import clean_project, parse_with_report, slugify, source_documents
 
 
 def reconcile(folder: Path) -> dict[str, object]:
@@ -27,20 +19,37 @@ def reconcile(folder: Path) -> dict[str, object]:
     docs = source_documents(folder)
     expected: dict[tuple[str, str, str, str], dict[str, str]] = {}
     source_counts: Counter[str] = Counter()
+    identity_counts: Counter[tuple[str, str, str, str]] = Counter()
+    document_reports: list[dict[str, object]] = []
 
     for path in docs:
         project = clean_project(path)
         slug = slugify(project)
-        for entry in parse(path):
+        entries, parse_report = parse_with_report(path)
+        parse_report["project"] = project
+        parse_report["project_slug"] = slug
+        document_reports.append(parse_report)
+        for entry in entries:
             identity = (slug, entry["occurred_at"], entry["title"], path.name)
-            expected[identity] = {
-                "project": project,
-                "project_slug": slug,
-                "occurred_at": entry["occurred_at"],
-                "title": entry["title"],
-                "source_ref": path.name,
-            }
+            identity_counts[identity] += 1
+            expected.setdefault(
+                identity,
+                {
+                    "project": project,
+                    "project_slug": slug,
+                    "occurred_at": entry["occurred_at"],
+                    "title": entry["title"],
+                    "source_ref": path.name,
+                },
+            )
             source_counts[slug] += 1
+
+    duplicate_source_identities = [
+        {"project_slug": key[0], "occurred_at": key[1], "title": key[2], "source_ref": key[3], "count": count}
+        for key, count in sorted(identity_counts.items())
+        if count > 1
+    ]
+    source_errors = [report for report in document_reports if not report["ok"]]
 
     with connect() as cx:
         rows = [
@@ -69,13 +78,18 @@ def reconcile(folder: Path) -> dict[str, object]:
         values["difference"] = values["ledger"] - values["source"]
 
     report = {
-        "ok": not missing_keys and not unexpected_keys,
+        "schema_version": 1,
+        "ok": not missing_keys and not unexpected_keys and not source_errors and not duplicate_source_identities,
         "source_documents": len(docs),
-        "source_entries": len(expected),
+        "source_entries": sum(source_counts.values()),
+        "unique_source_entries": len(expected),
         "ledger_imported_entries": len(actual),
+        "source_errors": source_errors,
+        "duplicate_source_identities": duplicate_source_identities,
         "missing_entries": [expected[key] for key in missing_keys],
         "unexpected_entries": [actual[key] for key in unexpected_keys],
         "project_counts": dict(sorted(projects.items())),
+        "document_reports": document_reports,
     }
     return report
 
@@ -86,7 +100,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="Optional JSON report path")
     args = parser.parse_args()
 
-    report = reconcile(args.folder)
+    try:
+        report = reconcile(args.folder)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+        return 2
+
     rendered = json.dumps(report, indent=2, sort_keys=True)
     print(rendered)
     if args.output:
