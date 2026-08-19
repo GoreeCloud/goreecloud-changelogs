@@ -13,7 +13,7 @@ All notable source releases of GoreeCloud Changelogs will be documented here. Th
 - Added Glaze UI timeline, project filter, search, and entry-detail surfaces.
 - Added fail-closed scoped read/write API authentication and controlled JSON export for integrations.
 - Added historical Microsoft Word change-log importer.
-- Added hardened Docker and Docker Compose foundation.
+- Added hardened Docker and Docker Compose foundation with a read-only root filesystem, restricted temporary filesystem, dropped Linux capabilities, no-new-privileges, bounded process count, bounded local logs, graceful shutdown, and explicit fail-closed read/write API environment controls.
 - Added source and ledger validation through GitHub Actions.
 - Added native Android Jetpack Compose project foundation.
 - Added migration, architecture, API, security, and production-readiness documentation.
