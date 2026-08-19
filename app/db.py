@@ -41,8 +41,15 @@ CREATE TABLE IF NOT EXISTS entries (
   source_ref TEXT NOT NULL DEFAULT '',
   supersedes_id INTEGER REFERENCES entries(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CHECK (length(trim(title)) > 0)
+  CHECK (length(trim(title)) > 0),
+  CHECK (supersedes_id IS NULL OR supersedes_id != id)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS entries_source_identity
+  ON entries(project_id, occurred_at, title, source_ref);
+CREATE INDEX IF NOT EXISTS entries_project_time
+  ON entries(project_id, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS entries_supersedes
+  ON entries(supersedes_id) WHERE supersedes_id IS NOT NULL;
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
   title, category, summary, purpose, affected, changes, implementation, validation, final_state, limitations, follow_up,
   content='entries', content_rowid='id'
@@ -51,9 +58,11 @@ CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
   INSERT INTO entries_fts(rowid,title,category,summary,purpose,affected,changes,implementation,validation,final_state,limitations,follow_up)
   VALUES (new.id,new.title,new.category,new.summary,new.purpose,new.affected,new.changes,new.implementation,new.validation,new.final_state,new.limitations,new.follow_up);
 END;
-CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
-  INSERT INTO entries_fts(entries_fts,rowid,title,category,summary,purpose,affected,changes,implementation,validation,final_state,limitations,follow_up)
-  VALUES('delete',old.id,old.title,old.category,old.summary,old.purpose,old.affected,old.changes,old.implementation,old.validation,old.final_state,old.limitations,old.follow_up);
+CREATE TRIGGER IF NOT EXISTS entries_no_update BEFORE UPDATE ON entries BEGIN
+  SELECT RAISE(ABORT, 'historical entries are append-only; create a superseding entry');
+END;
+CREATE TRIGGER IF NOT EXISTS entries_no_delete BEFORE DELETE ON entries BEGIN
+  SELECT RAISE(ABORT, 'historical entries are append-only and cannot be deleted');
 END;
 """
 
@@ -61,6 +70,9 @@ END;
 def init_db() -> None:
     with connect() as cx:
         cx.executescript(SCHEMA)
+        # Rebuild the external-content FTS index so imported databases created by
+        # older versions are reconciled when this schema is first applied.
+        cx.execute("INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
 
 
 @contextmanager
@@ -68,8 +80,12 @@ def connect():
     cx = sqlite3.connect(DB_PATH)
     cx.row_factory = sqlite3.Row
     cx.execute("PRAGMA foreign_keys=ON")
+    cx.execute("PRAGMA busy_timeout=5000")
     try:
         yield cx
         cx.commit()
+    except Exception:
+        cx.rollback()
+        raise
     finally:
         cx.close()
