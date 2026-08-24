@@ -11,7 +11,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.db import connect, init_db
-from scripts.import_docx import clean_project, parse_with_report, slugify, source_documents
+from scripts.import_docx import FIELD_NAMES, clean_project, parse_with_report, slugify, source_documents
+
+IDENTITY_FIELDS = ("project_slug", "occurred_at", "title", "source_ref")
+CONTENT_FIELDS = tuple(FIELD_NAMES)
+
+
+def _identity(record: dict[str, object]) -> tuple[str, str, str, str]:
+    return tuple(str(record[field]) for field in IDENTITY_FIELDS)  # type: ignore[return-value]
+
+
+def _normalized(value: object) -> str:
+    return "\n".join(line.rstrip() for line in str(value or "").strip().splitlines())
 
 
 def reconcile(folder: Path) -> dict[str, object]:
@@ -30,18 +41,17 @@ def reconcile(folder: Path) -> dict[str, object]:
         parse_report["project_slug"] = slug
         document_reports.append(parse_report)
         for entry in entries:
-            identity = (slug, entry["occurred_at"], entry["title"], path.name)
+            record = {
+                "project": project,
+                "project_slug": slug,
+                "occurred_at": entry["occurred_at"],
+                "title": entry["title"],
+                "source_ref": path.name,
+                **{field: entry.get(field, "") for field in CONTENT_FIELDS},
+            }
+            identity = _identity(record)
             identity_counts[identity] += 1
-            expected.setdefault(
-                identity,
-                {
-                    "project": project,
-                    "project_slug": slug,
-                    "occurred_at": entry["occurred_at"],
-                    "title": entry["title"],
-                    "source_ref": path.name,
-                },
-            )
+            expected.setdefault(identity, record)
             source_counts[slug] += 1
 
     duplicate_source_identities = [
@@ -51,22 +61,52 @@ def reconcile(folder: Path) -> dict[str, object]:
     ]
     source_errors = [report for report in document_reports if not report["ok"]]
 
+    columns = ",".join(f"e.{field}" for field in CONTENT_FIELDS)
     with connect() as cx:
         rows = [
             dict(row)
             for row in cx.execute(
-                "SELECT p.slug project_slug,p.name project_name,e.occurred_at,e.title,e.source_ref "
-                "FROM entries e JOIN projects p ON p.id=e.project_id"
+                "SELECT p.slug project_slug,p.name project_name,e.occurred_at,e.title,e.source_ref,"
+                + columns
+                + " FROM entries e JOIN projects p ON p.id=e.project_id"
             )
         ]
 
-    actual = {
-        (row["project_slug"], row["occurred_at"], row["title"], row["source_ref"]): row
-        for row in rows
-        if row["source_ref"]
-    }
+    ledger_identity_counts: Counter[tuple[str, str, str, str]] = Counter()
+    actual: dict[tuple[str, str, str, str], dict[str, object]] = {}
+    for row in rows:
+        if not row["source_ref"]:
+            continue
+        identity = _identity(row)
+        ledger_identity_counts[identity] += 1
+        actual.setdefault(identity, row)
+
+    duplicate_ledger_identities = [
+        {"project_slug": key[0], "occurred_at": key[1], "title": key[2], "source_ref": key[3], "count": count}
+        for key, count in sorted(ledger_identity_counts.items())
+        if count > 1
+    ]
+
     missing_keys = sorted(set(expected) - set(actual))
     unexpected_keys = sorted(set(actual) - set(expected))
+
+    content_mismatches: list[dict[str, object]] = []
+    for key in sorted(set(expected) & set(actual)):
+        differing = [
+            field
+            for field in CONTENT_FIELDS
+            if _normalized(expected[key].get(field)) != _normalized(actual[key].get(field))
+        ]
+        if differing:
+            content_mismatches.append(
+                {
+                    "project_slug": key[0],
+                    "occurred_at": key[1],
+                    "title": key[2],
+                    "source_ref": key[3],
+                    "fields": differing,
+                }
+            )
 
     actual_counts: Counter[str] = Counter(row["project_slug"] for row in actual.values())
     projects: dict[str, dict[str, int]] = defaultdict(lambda: {"source": 0, "ledger": 0, "difference": 0})
@@ -77,21 +117,32 @@ def reconcile(folder: Path) -> dict[str, object]:
     for values in projects.values():
         values["difference"] = values["ledger"] - values["source"]
 
-    report = {
-        "schema_version": 1,
-        "ok": not missing_keys and not unexpected_keys and not source_errors and not duplicate_source_identities,
+    ok = not any(
+        (
+            missing_keys,
+            unexpected_keys,
+            source_errors,
+            duplicate_source_identities,
+            duplicate_ledger_identities,
+            content_mismatches,
+        )
+    )
+    return {
+        "schema_version": 2,
+        "ok": ok,
         "source_documents": len(docs),
         "source_entries": sum(source_counts.values()),
         "unique_source_entries": len(expected),
         "ledger_imported_entries": len(actual),
         "source_errors": source_errors,
         "duplicate_source_identities": duplicate_source_identities,
+        "duplicate_ledger_identities": duplicate_ledger_identities,
+        "content_mismatches": content_mismatches,
         "missing_entries": [expected[key] for key in missing_keys],
         "unexpected_entries": [actual[key] for key in unexpected_keys],
         "project_counts": dict(sorted(projects.items())),
         "document_reports": document_reports,
     }
-    return report
 
 
 def main() -> int:
