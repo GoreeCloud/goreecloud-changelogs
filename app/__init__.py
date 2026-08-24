@@ -1,0 +1,1 @@
+"""GoreeCloud Changelogs application package."""

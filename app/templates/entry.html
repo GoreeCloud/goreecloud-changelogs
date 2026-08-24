@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{entry.title}} · GoreeCloud Changelogs{% endblock %}
+{% block content %}
+<a class="back" href="/">← Timeline</a>
+<article class="record glaze">
+  <div class="meta"><span class="chip">{{entry.project_name}}</span><time>{{entry.occurred_at}}</time></div>
+  <h1>{{entry.title}}</h1>
+  {% set fields=[('Category',entry.category),('Summary',entry.summary),('Purpose',entry.purpose),('Affected systems / environment',entry.affected),('Previous state',entry.previous_state),('Changes completed',entry.changes),('Implementation details',entry.implementation),('Validation and testing',entry.validation),('Final state',entry.final_state),('Known issues / limitations',entry.limitations),('Rollback / recovery',entry.rollback),('Follow-up',entry.follow_up),('Release',entry.release),('Environment',entry.environment),('Source',entry.source_ref)] %}
+  {% for label,value in fields %}{% if value %}<section><h2>{{label}}</h2><div class="prose">{{value}}</div></section>{% endif %}{% endfor %}
+</article>
+{% endblock %}
