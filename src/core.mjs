@@ -1,13 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import Ajv from 'ajv';
+import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
 const CHANGE_ID_RE = /^GC-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3,}$/;
 
 export async function createValidator(schemaPath = new URL('../schema/change.schema.json', import.meta.url)) {
   const schema = JSON.parse(await fs.readFile(schemaPath, 'utf8'));
-  const ajv = new Ajv({ allErrors: true, strict: true });
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
   return ajv.compile(schema);
 }
