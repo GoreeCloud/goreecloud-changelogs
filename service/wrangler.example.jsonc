@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "goreecloud-changelogs",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-26",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHANGE_ID_ALLOCATOR",
+        "class_name": "ChangeIdAllocator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ChangeIdAllocator"]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "CHANGELOGS_DB",
+      "database_name": "goreecloud-changelogs",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
