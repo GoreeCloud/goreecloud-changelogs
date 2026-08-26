@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goree.cloud/schemas/changelogs/change.schema.json",
+  "title": "GoreeCloud Change Record",
+  "description": "Canonical machine-readable record for a meaningful GoreeCloud change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "change_id",
+    "created_at",
+    "summary",
+    "change_type",
+    "components",
+    "maturity",
+    "status",
+    "visibility",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "default": "1.0.0"
+    },
+    "change_id": {
+      "type": "string",
+      "pattern": "^GC-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3,}$",
+      "examples": ["GC-2026-08-26-004"]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "summary": { "type": "string", "minLength": 1 },
+    "rationale": { "type": "string" },
+    "implementation": { "type": "string" },
+    "change_type": {
+      "type": "string",
+      "enum": ["Added", "Changed", "Fixed", "Security", "Privacy", "Deprecated", "Removed", "Deployment", "Documentation", "Infrastructure"]
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "platform_systems": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["Privacy Shield", "Wardveil Security", "Everkeep", "Glaze UI", "GoreeCloud Mesh"]
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "user": { "type": "string" },
+        "developer": { "type": "string" },
+        "operational": { "type": "string" },
+        "compatibility": { "type": "string" },
+        "security": { "type": "string" },
+        "privacy": { "type": "string" },
+        "infrastructure": { "type": "string" },
+        "administrative": { "type": "string" }
+      }
+    },
+    "maturity": {
+      "type": "string",
+      "enum": ["Designed", "Implemented", "Tested", "Deployed", "Verified"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["Proposed", "In Progress", "Implemented", "Tested", "Deployed", "Verified", "Released", "Rolled Back"]
+    },
+    "environments": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["local", "development", "testing", "staging", "production"]
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["environment", "state"],
+        "properties": {
+          "environment": { "type": "string" },
+          "state": { "type": "string", "enum": ["Planned", "In Progress", "Succeeded", "Failed", "Rolled Back", "Verified"] },
+          "deployed_at": { "type": "string", "format": "date-time" },
+          "version": { "type": "string" },
+          "reference": { "type": "string" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "reference"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["commit", "pull_request", "issue", "automated_test", "manual_verification", "deployment", "documentation", "build_artifact", "runtime_observation", "monitoring", "other"]
+          },
+          "reference": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "source": { "type": "string" },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "verified": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "change_id"],
+        "properties": {
+          "type": { "type": "string", "enum": ["parent", "child", "depends_on", "supersedes", "fixes", "reverts", "extends", "replaces"] },
+          "change_id": { "type": "string", "pattern": "^GC-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3,}$" }
+        }
+      }
+    },
+    "migration": { "type": "string" },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason": { "type": "string" },
+        "restored_version": { "type": "string" },
+        "rolled_back_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["public", "internal", "restricted", "confidential"]
+    },
+    "sensitivity": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["security", "privacy", "infrastructure", "operational", "administrative"] }
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source"],
+        "properties": {
+          "source": { "type": "string" },
+          "reference": { "type": "string" },
+          "recorded_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "amendments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["amended_at", "reason", "description"],
+        "properties": {
+          "amended_at": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" },
+          "description": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "release_notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eligible": { "type": "boolean", "default": false },
+        "audience": { "type": "array", "items": { "type": "string" } },
+        "public_summary": { "type": "string" }
+      }
+    }
+  }
+}
