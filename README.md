@@ -69,9 +69,20 @@ Every significant record can include:
 - `schema/change.schema.json` — canonical machine-readable change-record schema
 - `docs/CHANGE_IDS.md` — Change ID format and allocation rules
 - `docs/CORE_V1.md` — Core v1 architecture and implementation contract
-- `examples/` — reference records that conform to the schema
+- `docs/CLOUDFLARE_SERVICE.md` — distributed allocator, D1 ledger, API, and deployment boundary
+- `src/` — local/offline validator, allocator, store, and CLI
+- `service/src/` — Cloudflare Worker and Durable Object service implementation
+- `service/migrations/` — D1 canonical ledger migrations
+- `service/wrangler.example.jsonc` — provisioning template; not deployment evidence
+- `test/` — Core v1 automated tests
 
 The canonical Google Drive changelog history remains under `GoreeCloud/Changelogs`. This repository contains the service model, schemas, validation logic, tooling, and implementation documentation that make those records structured and machine-readable.
+
+## Service architecture
+
+The production-oriented service path uses a per-date Durable Object to coordinate Change ID allocation and D1 as the queryable canonical ledger. The local filesystem allocator remains available for offline and development workflows but is not intended to become the deployed allocation authority.
+
+The initial Worker API supports authenticated change creation, retrieval, and filtering. Source code and configuration templates are **implementation evidence only**. The service must not be described as deployed or verified until Cloudflare resources are provisioned, migrations are applied, deployment succeeds, and runtime acceptance evidence exists.
 
 ## Platform integrations
 
