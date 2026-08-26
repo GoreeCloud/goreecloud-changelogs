@@ -1,0 +1,19 @@
+{
+  "name": "@goreecloud/changelogs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Canonical GoreeCloud change ledger, validation, Change ID allocation, and record storage foundation.",
+  "scripts": {
+    "test": "node --test",
+    "validate": "node src/cli.mjs validate",
+    "allocate": "node src/cli.mjs allocate"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
